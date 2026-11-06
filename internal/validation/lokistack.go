@@ -2,6 +2,8 @@ package validation
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -278,11 +280,8 @@ func (v *LokiStackValidator) validateTenantLimits(limits *lokiv1.LimitsSpec) fie
 	}
 
 	var allErrs field.ErrorList
-	for tenant, tenantLimits := range limits.Tenants {
-		if tenantLimits.IngestionLimits == nil &&
-			tenantLimits.QueryLimits == nil &&
-			tenantLimits.OTLP == nil &&
-			tenantLimits.Retention == nil {
+	for _, tenant := range slices.Sorted(maps.Keys(limits.Tenants)) {
+		if limits.Tenants[tenant].IsEmpty() {
 			allErrs = append(allErrs, field.Invalid(
 				field.NewPath("spec", "limits", "tenants", tenant),
 				tenant,
