@@ -1154,6 +1154,109 @@ var ltt = []struct {
 		),
 	},
 	{
+		desc: "lokistack with per-tenant limits with an empty ingestion section - should fail",
+		spec: lokiv1.LokiStack{
+			Spec: lokiv1.LokiStackSpec{
+				Limits: &lokiv1.LimitsSpec{
+					Tenants: map[string]lokiv1.PerTenantLimitsTemplateSpec{
+						"test-tenant": {
+							IngestionLimits: &lokiv1.IngestionLimitSpec{},
+						},
+					},
+				},
+				Storage: lokiv1.ObjectStorageSpec{
+					Schemas: []lokiv1.ObjectStorageSchema{
+						{
+							Version:       lokiv1.ObjectStorageSchemaV13,
+							EffectiveDate: "2024-10-22",
+						},
+					},
+				},
+			},
+		},
+		err: apierrors.NewInvalid(
+			schema.GroupKind{Group: "loki.grafana.com", Kind: "LokiStack"},
+			"testing-stack",
+			field.ErrorList{
+				field.Invalid(
+					field.NewPath("spec", "limits", "tenants", "test-tenant"),
+					"test-tenant",
+					lokiv1.ErrTenantLimitsEmpty.Error(),
+				),
+			},
+		),
+	},
+	{
+		desc: "lokistack with per-tenant limits with an empty queries section - should fail",
+		spec: lokiv1.LokiStack{
+			Spec: lokiv1.LokiStackSpec{
+				Limits: &lokiv1.LimitsSpec{
+					Tenants: map[string]lokiv1.PerTenantLimitsTemplateSpec{
+						"test-tenant": {
+							QueryLimits: &lokiv1.PerTenantQueryLimitSpec{},
+						},
+					},
+				},
+				Storage: lokiv1.ObjectStorageSpec{
+					Schemas: []lokiv1.ObjectStorageSchema{
+						{
+							Version:       lokiv1.ObjectStorageSchemaV13,
+							EffectiveDate: "2024-10-22",
+						},
+					},
+				},
+			},
+		},
+		err: apierrors.NewInvalid(
+			schema.GroupKind{Group: "loki.grafana.com", Kind: "LokiStack"},
+			"testing-stack",
+			field.ErrorList{
+				field.Invalid(
+					field.NewPath("spec", "limits", "tenants", "test-tenant"),
+					"test-tenant",
+					lokiv1.ErrTenantLimitsEmpty.Error(),
+				),
+			},
+		),
+	},
+	{
+		desc: "lokistack with multiple per-tenant limits that set no limit - should fail in tenant order",
+		spec: lokiv1.LokiStack{
+			Spec: lokiv1.LokiStackSpec{
+				Limits: &lokiv1.LimitsSpec{
+					Tenants: map[string]lokiv1.PerTenantLimitsTemplateSpec{
+						"zeta":  {},
+						"alpha": {},
+					},
+				},
+				Storage: lokiv1.ObjectStorageSpec{
+					Schemas: []lokiv1.ObjectStorageSchema{
+						{
+							Version:       lokiv1.ObjectStorageSchemaV13,
+							EffectiveDate: "2024-10-22",
+						},
+					},
+				},
+			},
+		},
+		err: apierrors.NewInvalid(
+			schema.GroupKind{Group: "loki.grafana.com", Kind: "LokiStack"},
+			"testing-stack",
+			field.ErrorList{
+				field.Invalid(
+					field.NewPath("spec", "limits", "tenants", "alpha"),
+					"alpha",
+					lokiv1.ErrTenantLimitsEmpty.Error(),
+				),
+				field.Invalid(
+					field.NewPath("spec", "limits", "tenants", "zeta"),
+					"zeta",
+					lokiv1.ErrTenantLimitsEmpty.Error(),
+				),
+			},
+		),
+	},
+	{
 		desc: "lokistack with per-tenant ingestion limits - should succeed",
 		spec: lokiv1.LokiStack{
 			Spec: lokiv1.LokiStackSpec{
