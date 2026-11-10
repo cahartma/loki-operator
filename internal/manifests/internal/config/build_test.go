@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
 
 	configv1 "github.com/grafana-community/loki-operator/api/config/v1"
 	lokiv1 "github.com/grafana-community/loki-operator/api/loki/v1"
@@ -976,6 +977,247 @@ func TestBuild_ConfigAndRuntimeConfig_WithRetention(t *testing.T) {
 	require.NoError(t, err)
 	require.YAMLEq(t, expCfg, string(cfg))
 	require.YAMLEq(t, expRCfg, string(rCfg))
+}
+
+func TestBuild_ConfigAndRuntimeConfig_WithEmptyBlockedQueries(t *testing.T) {
+	expCfg, expRCfg := loadTestData(t, "with-empty-blocked-queries")
+	opts := Options{
+		Stack: lokiv1.LokiStackSpec{
+			Replication: &lokiv1.ReplicationSpec{
+				Factor: 1,
+			},
+			Limits: &lokiv1.LimitsSpec{
+				Global: &lokiv1.LimitsTemplateSpec{
+					IngestionLimits: &lokiv1.IngestionLimitSpec{
+						IngestionRate:             4,
+						IngestionBurstSize:        6,
+						MaxLabelNameLength:        1024,
+						MaxLabelValueLength:       2048,
+						MaxLabelNamesPerSeries:    30,
+						MaxGlobalStreamsPerTenant: 0,
+						MaxLineSize:               256000,
+						PerStreamRateLimit:        5,
+						PerStreamRateLimitBurst:   15,
+						PerStreamDesiredRate:      3,
+					},
+					QueryLimits: &lokiv1.QueryLimitSpec{
+						MaxEntriesLimitPerQuery: 5000,
+						MaxChunksPerQuery:       2000000,
+						MaxQuerySeries:          500,
+						QueryTimeout:            "1m",
+						CardinalityLimit:        100000,
+						MaxVolumeSeries:         1000,
+					},
+				},
+			},
+		},
+		Overrides: map[string]LokiOverrides{
+			"test-a": {
+				Limits: lokiv1.PerTenantLimitsTemplateSpec{
+					IngestionLimits: &lokiv1.IngestionLimitSpec{
+						IngestionRate: 2,
+					},
+				},
+			},
+			"test-b": {
+				Limits: lokiv1.PerTenantLimitsTemplateSpec{
+					QueryLimits: &lokiv1.PerTenantQueryLimitSpec{
+						Blocked: []lokiv1.BlockedQuerySpec{},
+					},
+				},
+			},
+		},
+		Namespace: "test-ns",
+		Name:      "test",
+		Compactor: Address{
+			FQDN: "loki-compactor-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		FrontendWorker: Address{
+			FQDN: "loki-query-frontend-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		GossipRing: GossipRing{
+			InstancePort:         9095,
+			BindPort:             7946,
+			MembersDiscoveryAddr: "loki-gossip-ring-lokistack-dev.default.svc.cluster.local",
+		},
+		Querier: Address{
+			Protocol: "http",
+			FQDN:     "loki-querier-http-lokistack-dev.default.svc.cluster.local",
+			Port:     3100,
+		},
+		IndexGateway: Address{
+			FQDN: "loki-index-gateway-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		StorageDirectory: "/tmp/loki",
+		MaxConcurrent: MaxConcurrent{
+			AvailableQuerierCPUCores: 2,
+		},
+		WriteAheadLog: WriteAheadLog{
+			Directory:             "/tmp/wal",
+			IngesterMemoryRequest: 0,
+		},
+		ObjectStorage: storage.Options{
+			SharedStore: lokiv1.ObjectStorageSecretS3,
+			S3: &storage.S3StorageConfig{
+				Endpoint:       "http://test.default.svc.cluster.local.:9000",
+				Region:         "us-east",
+				Buckets:        "loki",
+				ForcePathStyle: true,
+			},
+			Schemas: []lokiv1.ObjectStorageSchema{
+				{
+					//nolint:staticcheck
+					Version:       lokiv1.ObjectStorageSchemaV11,
+					EffectiveDate: "2020-10-01",
+				},
+			},
+		},
+		Shippers:              []string{"boltdb"},
+		EnableRemoteReporting: true,
+		DiscoverLogLevels:     true,
+		HTTPTimeouts: HTTPTimeoutConfig{
+			IdleTimeout:  30 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 10 * time.Minute,
+		},
+	}
+	cfg, rCfg, err := Build(opts)
+	require.NoError(t, err)
+	require.YAMLEq(t, expCfg, string(cfg))
+	require.YAMLEq(t, expRCfg, string(rCfg))
+}
+
+// Admitted tenants must render at least one runtime config key.
+func TestBuild_RuntimeConfig_AdmittedTenantsRenderKeys(t *testing.T) {
+	specs := map[string]lokiv1.PerTenantLimitsTemplateSpec{
+		"no-limits":          {},
+		"empty-ingestion":    {IngestionLimits: &lokiv1.IngestionLimitSpec{}},
+		"empty-queries":      {QueryLimits: &lokiv1.PerTenantQueryLimitSpec{}},
+		"empty-blocked-list": {QueryLimits: &lokiv1.PerTenantQueryLimitSpec{Blocked: []lokiv1.BlockedQuerySpec{}}},
+		"ingestion-rate":     {IngestionLimits: &lokiv1.IngestionLimitSpec{IngestionRate: 4}},
+		"blocked-query": {
+			QueryLimits: &lokiv1.PerTenantQueryLimitSpec{
+				Blocked: []lokiv1.BlockedQuerySpec{
+					{Pattern: `{namespace="foo"}`},
+				},
+			},
+		},
+		"retention": {Retention: &lokiv1.RetentionLimitSpec{Days: 7}},
+	}
+
+	opts := Options{
+		Stack: lokiv1.LokiStackSpec{
+			Replication: &lokiv1.ReplicationSpec{
+				Factor: 1,
+			},
+			Limits: &lokiv1.LimitsSpec{
+				Global: &lokiv1.LimitsTemplateSpec{
+					IngestionLimits: &lokiv1.IngestionLimitSpec{
+						IngestionRate:             4,
+						IngestionBurstSize:        6,
+						MaxLabelNameLength:        1024,
+						MaxLabelValueLength:       2048,
+						MaxLabelNamesPerSeries:    30,
+						MaxGlobalStreamsPerTenant: 0,
+						MaxLineSize:               256000,
+						PerStreamRateLimit:        5,
+						PerStreamRateLimitBurst:   15,
+						PerStreamDesiredRate:      3,
+					},
+					QueryLimits: &lokiv1.QueryLimitSpec{
+						MaxEntriesLimitPerQuery: 5000,
+						MaxChunksPerQuery:       2000000,
+						MaxQuerySeries:          500,
+						QueryTimeout:            "1m",
+						CardinalityLimit:        100000,
+						MaxVolumeSeries:         1000,
+					},
+				},
+			},
+		},
+		Namespace: "test-ns",
+		Name:      "test",
+		Compactor: Address{
+			FQDN: "loki-compactor-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		FrontendWorker: Address{
+			FQDN: "loki-query-frontend-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		GossipRing: GossipRing{
+			InstancePort:         9095,
+			BindPort:             7946,
+			MembersDiscoveryAddr: "loki-gossip-ring-lokistack-dev.default.svc.cluster.local",
+		},
+		Querier: Address{
+			Protocol: "http",
+			FQDN:     "loki-querier-http-lokistack-dev.default.svc.cluster.local",
+			Port:     3100,
+		},
+		IndexGateway: Address{
+			FQDN: "loki-index-gateway-grpc-lokistack-dev.default.svc.cluster.local",
+			Port: 9095,
+		},
+		StorageDirectory: "/tmp/loki",
+		MaxConcurrent: MaxConcurrent{
+			AvailableQuerierCPUCores: 2,
+		},
+		WriteAheadLog: WriteAheadLog{
+			Directory:             "/tmp/wal",
+			IngesterMemoryRequest: 0,
+		},
+		ObjectStorage: storage.Options{
+			SharedStore: lokiv1.ObjectStorageSecretS3,
+			S3: &storage.S3StorageConfig{
+				Endpoint:       "http://test.default.svc.cluster.local.:9000",
+				Region:         "us-east",
+				Buckets:        "loki",
+				ForcePathStyle: true,
+			},
+			Schemas: []lokiv1.ObjectStorageSchema{
+				{
+					//nolint:staticcheck
+					Version:       lokiv1.ObjectStorageSchemaV11,
+					EffectiveDate: "2020-10-01",
+				},
+			},
+		},
+		Shippers:              []string{"boltdb"},
+		EnableRemoteReporting: true,
+		DiscoverLogLevels:     true,
+		HTTPTimeouts: HTTPTimeoutConfig{
+			IdleTimeout:  30 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 10 * time.Minute,
+		},
+	}
+	overrides := make(map[string]LokiOverrides, len(specs))
+	for name, spec := range specs {
+		overrides[name] = LokiOverrides{Limits: spec}
+	}
+	opts.Overrides = overrides
+
+	_, rCfg, err := Build(opts)
+	require.NoError(t, err)
+
+	var runtimeConfig struct {
+		Overrides map[string]any `json:"overrides"`
+	}
+	require.NoError(t, yaml.Unmarshal(rCfg, &runtimeConfig))
+
+	for name, spec := range specs {
+		t.Run(name, func(t *testing.T) {
+			if spec.IsEmpty() {
+				return
+			}
+			require.NotNil(t, runtimeConfig.Overrides[name],
+				"tenant admitted by validation must render at least one runtime config key")
+		})
+	}
 }
 
 func TestBuild_ConfigAndRuntimeConfig_RulerConfigGenerated_WithAlertRelabelConfigs(t *testing.T) {

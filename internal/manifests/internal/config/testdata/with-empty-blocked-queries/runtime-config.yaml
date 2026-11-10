@@ -1,0 +1,5 @@
+---
+overrides:
+  test-a:
+    ingestion_rate_mb: 2
+  test-b:
