@@ -1220,6 +1220,41 @@ var ltt = []struct {
 		),
 	},
 	{
+		desc: "lokistack with per-tenant limits with only an empty blocked queries list - should fail",
+		spec: lokiv1.LokiStack{
+			Spec: lokiv1.LokiStackSpec{
+				Limits: &lokiv1.LimitsSpec{
+					Tenants: map[string]lokiv1.PerTenantLimitsTemplateSpec{
+						"test-tenant": {
+							QueryLimits: &lokiv1.PerTenantQueryLimitSpec{
+								Blocked: []lokiv1.BlockedQuerySpec{},
+							},
+						},
+					},
+				},
+				Storage: lokiv1.ObjectStorageSpec{
+					Schemas: []lokiv1.ObjectStorageSchema{
+						{
+							Version:       lokiv1.ObjectStorageSchemaV13,
+							EffectiveDate: "2024-10-22",
+						},
+					},
+				},
+			},
+		},
+		err: apierrors.NewInvalid(
+			schema.GroupKind{Group: "loki.grafana.com", Kind: "LokiStack"},
+			"testing-stack",
+			field.ErrorList{
+				field.Invalid(
+					field.NewPath("spec", "limits", "tenants", "test-tenant"),
+					"test-tenant",
+					lokiv1.ErrTenantLimitsEmpty.Error(),
+				),
+			},
+		),
+	},
+	{
 		desc: "lokistack with multiple per-tenant limits that set no limit - should fail in tenant order",
 		spec: lokiv1.LokiStack{
 			Spec: lokiv1.LokiStackSpec{
@@ -1265,6 +1300,32 @@ var ltt = []struct {
 						"test-tenant": {
 							IngestionLimits: &lokiv1.IngestionLimitSpec{
 								IngestionRate: 4,
+							},
+						},
+					},
+				},
+				Storage: lokiv1.ObjectStorageSpec{
+					Schemas: []lokiv1.ObjectStorageSchema{
+						{
+							Version:       lokiv1.ObjectStorageSchemaV13,
+							EffectiveDate: "2024-10-22",
+						},
+					},
+				},
+			},
+		},
+	},
+	{
+		desc: "lokistack with per-tenant blocked queries - should succeed",
+		spec: lokiv1.LokiStack{
+			Spec: lokiv1.LokiStackSpec{
+				Limits: &lokiv1.LimitsSpec{
+					Tenants: map[string]lokiv1.PerTenantLimitsTemplateSpec{
+						"test-tenant": {
+							QueryLimits: &lokiv1.PerTenantQueryLimitSpec{
+								Blocked: []lokiv1.BlockedQuerySpec{
+									{Pattern: `{namespace="foo"}`},
+								},
 							},
 						},
 					},

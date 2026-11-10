@@ -1088,9 +1088,30 @@ func (in PerTenantLimitsTemplateSpec) IsEmpty() bool {
 		in.Retention == nil
 }
 
-// isZero reports whether ptr is nil or points to the zero value of T.
+// isZero reports whether ptr is nil or points to a value that renders no
+// keys in the runtime config.
 func isZero[T any](ptr *T) bool {
-	return ptr == nil || reflect.ValueOf(ptr).Elem().IsZero()
+	if ptr == nil {
+		return true
+	}
+	return isZeroValue(reflect.ValueOf(ptr).Elem())
+}
+
+// isZeroValue reports whether v renders no keys in the runtime config.
+func isZeroValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Slice, reflect.Map:
+		return v.Len() == 0
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if !isZeroValue(v.Field(i)) {
+				return false
+			}
+		}
+		return true
+	default:
+		return v.IsZero()
+	}
 }
 
 // LimitsSpec defines the spec for limits applied at ingestion or query

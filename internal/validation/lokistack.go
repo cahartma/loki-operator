@@ -273,7 +273,6 @@ func (v *LokiStackValidator) checkOTLPInvalidDropReference(basePath *field.Path,
 }
 
 // validateTenantLimits ensures that every tenant defines at least one limit.
-// Empty entries become null overrides that crash the index gateway and compactor.
 func (v *LokiStackValidator) validateTenantLimits(limits *lokiv1.LimitsSpec) field.ErrorList {
 	if limits == nil {
 		return nil
