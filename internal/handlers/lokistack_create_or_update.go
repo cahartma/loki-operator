@@ -167,7 +167,7 @@ func CreateOrUpdateLokiStack(
 	ll.Info("manifests built", "count", len(objects))
 
 	// Check for ownership conflicts before creating or updating resources
-	conflicts, err := CheckResourceOwnership(ctx, ll, k, s, req, &stack, objects)
+	conflicts, err := CheckResourceOwnership(ctx, k, s, req, &stack, objects)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,6 @@ func CreateOrUpdateLokiStack(
 // It returns a list of conflicting resource names.
 func CheckResourceOwnership(
 	ctx context.Context,
-	ll logr.Logger,
 	k k8s.Client,
 	s *runtime.Scheme,
 	req ctrl.Request,

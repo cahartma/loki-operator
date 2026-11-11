@@ -75,7 +75,7 @@ func CreateUpdateDeleteCredentialsRequest(ctx context.Context, log logr.Logger, 
 	}
 
 	// Check for ownership conflicts before creating or updating the resource
-	conflicts, err := CheckResourceOwnership(ctx, ll, k, scheme, req, &stack, []client.Object{credReq})
+	conflicts, err := CheckResourceOwnership(ctx, k, scheme, req, &stack, []client.Object{credReq})
 	if err != nil {
 		return err
 	}
